@@ -1,0 +1,9 @@
+Feature,Coefficient
+Pathway_Angiogenesis,0.14902392713054236
+Pathway_HER2_Signaling,0.11573490099361682
+Pathway_Immune_Response,0.036801147170881454
+Pathway_Proliferation,0.0
+Ratio_Prolif_Apop,0.0
+Pathway_Invasion_EMT,-0.05472249384829112
+Pathway_Apoptosis,-0.27799888826460306
+Pathway_Estrogen_Response,-0.2840305645042836
