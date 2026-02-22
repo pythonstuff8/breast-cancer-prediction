@@ -1,82 +1,116 @@
+"""
+Preprocessing utilities for gene expression and clinical data.
+
+Includes z-score normalization, clinical feature encoding,
+and outcome variable filtering.
+"""
 
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from typing import Tuple, Dict
+import numpy as np
+from sklearn.preprocessing import LabelEncoder
 
-def clean_and_normalize(expression_df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Cleans and normalizes gene expression data.
-    Assumes sample_id is in the dataframe.
-    """
-    # Separate ID
-    if 'sample_id' in expression_df.columns:
-        ids = expression_df['sample_id']
-        data = expression_df.drop('sample_id', axis=1)
-    else:
-        ids = expression_df.index
-        data = expression_df
-        
-    # Handle missing values (simple imputation for now)
-    data = data.fillna(data.mean())
-    
-    # Normalize (Z-score)
-    scaler = StandardScaler()
-    data_scaled = pd.DataFrame(scaler.fit_transform(data), columns=data.columns)
-    
-    # Reattach ID
-    data_scaled['sample_id'] = ids.values
-    
-    return data_scaled
 
-def prepare_datasets(expression_df: pd.DataFrame, clinical_df: pd.DataFrame, target_col: str = 'high_risk') -> Dict[str, pd.DataFrame]:
+def zscore_normalize(expression_df):
     """
-    Merges data and splits into train/test sets.
-    
+    Z-score normalize gene expression data across samples (per gene).
+
+    For each gene: z = (value - mean) / std, computed across all samples
+    within the cohort.
+
+    Args:
+        expression_df: DataFrame with samples as rows, genes as columns.
+            May include a 'sample_id' column which is preserved.
+
     Returns:
-        Dictionary with keys: 'X_train', 'X_test', 'y_train', 'y_test', 'train_clinical', 'test_clinical'
+        DataFrame with z-score normalized expression values.
     """
-    # Merge on sample_id
-    merged = pd.merge(expression_df, clinical_df, on='sample_id')
-    
-    # Process Stage Feature
-    if 'stage' in merged.columns:
-        stage_map = {
-            'Stage I': 1, 'Stage IA': 1, 'Stage IB': 1,
-            'Stage II': 2, 'Stage IIA': 2, 'Stage IIB': 2,
-            'Stage III': 3, 'Stage IIIA': 3, 'Stage IIIB': 3, 'Stage IIIC': 3,
-            'Stage IV': 4,
-            'Stage X': 0, '[Discrepancy]': 0
-        }
-        # Use 0 for unknown/NaN
-        merged['stage_encoded'] = merged['stage'].map(stage_map).fillna(0)
+    if "sample_id" in expression_df.columns:
+        ids = expression_df["sample_id"].copy()
+        data = expression_df.drop("sample_id", axis=1)
     else:
-        merged['stage_encoded'] = 0
+        ids = None
+        data = expression_df.copy()
 
-    # Features (genes + stage) - exclude clinical columns and ID
-    # We explicitly select expression columns (which should be pathway scores) + stage_encoded
-    # Assuming expression_df passed here already contains features.
-    
-    # Identify feature columns: all numeric columns from expression_df + stage_encoded
-    # But expression_df might have sample_id.
-    feature_cols = [c for c in expression_df.columns if c != 'sample_id']
-    
-    # Update X to include stage_encoded
-    X = merged[feature_cols].copy()
-    # X['Stage_Clinical'] = merged['stage_encoded'] # Disabled: reduced performance
-    
-    y = merged[target_col]
-    
-    # Split
-    X_train, X_test, y_train, y_test, clinical_train, clinical_test = train_test_split(
-        X, y, merged, test_size=0.2, random_state=42, stratify=y
-    )
-    
-    return {
-        'X_train': X_train,
-        'X_test': X_test,
-        'y_train': y_train,
-        'y_test': y_test,
-        'clinical_train': clinical_train,
-        'clinical_test': clinical_test
+    # Z-score per gene (column-wise): (x - mean) / std
+    means = data.mean(axis=0)
+    stds = data.std(axis=0)
+    stds = stds.replace(0, 1)  # avoid division by zero for constant genes
+    normalized = (data - means) / stds
+
+    if ids is not None:
+        normalized.insert(0, "sample_id", ids.values)
+
+    return normalized
+
+
+def encode_clinical_features(clinical_df):
+    """
+    Encode clinical features for model input.
+
+    Categorical features are encoded with LabelEncoder (NaN -> "Unknown").
+    Numeric features are imputed with median.
+
+    Args:
+        clinical_df: GSE96058 clinical DataFrame.
+
+    Returns:
+        DataFrame with encoded feature columns:
+            lymph_node_status_enc, er_status_enc, pgr_status_enc,
+            her2_status_enc, ki67_status_enc, nhg_enc, pam50_subtype_enc,
+            age_at_diagnosis, tumor_size
+    """
+    result = pd.DataFrame(index=clinical_df.index)
+
+    # Categorical features to encode
+    categorical_cols = {
+        "lymph_node_status": "lymph_node_status_enc",
+        "er_status": "er_status_enc",
+        "pgr_status": "pgr_status_enc",
+        "her2_status": "her2_status_enc",
+        "ki67_status": "ki67_status_enc",
+        "nhg": "nhg_enc",
+        "pam50_subtype": "pam50_subtype_enc",
     }
+
+    for src_col, dst_col in categorical_cols.items():
+        if src_col in clinical_df.columns:
+            col = clinical_df[src_col].fillna("Unknown").astype(str)
+            le = LabelEncoder()
+            result[dst_col] = le.fit_transform(col)
+        else:
+            print(f"Warning: column '{src_col}' not found in clinical data")
+            result[dst_col] = 0
+
+    # Numeric features (impute with median)
+    for col in ["age_at_diagnosis", "tumor_size"]:
+        if col in clinical_df.columns:
+            result[col] = pd.to_numeric(clinical_df[col], errors="coerce")
+            result[col] = result[col].fillna(result[col].median())
+        else:
+            print(f"Warning: column '{col}' not found in clinical data")
+            result[col] = 0
+
+    return result
+
+
+def filter_outcome(clinical_df):
+    """
+    Filter to patients with a defined binary outcome (high_risk).
+
+    Keeps only rows where high_risk is not null.
+
+    Args:
+        clinical_df: DataFrame with 'high_risk' column.
+
+    Returns:
+        Filtered DataFrame.
+    """
+    if "high_risk" not in clinical_df.columns:
+        raise ValueError("'high_risk' column not found in clinical data")
+
+    filtered = clinical_df.dropna(subset=["high_risk"]).copy()
+    filtered["high_risk"] = filtered["high_risk"].astype(int)
+    print(f"Filtered to {len(filtered)} patients with defined outcome "
+          f"(high_risk=1: {filtered['high_risk'].sum()}, "
+          f"high_risk=0: {(filtered['high_risk'] == 0).sum()})")
+    return filtered

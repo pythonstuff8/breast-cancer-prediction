@@ -1,58 +1,30 @@
-# Byte-compiled / optimized / DLL files
+# Large data files
+*.csv.gz
+data/raw/GSE96058_gene_expression*.csv
+data/01_tcga_expression_normalized.csv
+
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
 
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# Jupyter
+.ipynb_checkpoints/
 
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-.hypothesis/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Project specific
-results/
-results_*/
-__MACOSX
+# OS
 .DS_Store
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.out
+*.bbl
+*.blg
+*.synctex.gz
+paper/*.pdf
+
+# Virtual environments
+.venv/
+venv/
+env/
