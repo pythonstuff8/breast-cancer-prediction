@@ -1,0 +1,2 @@
+subtype,n_patients,n_events,cv_c_index,cv_c_index_std,oof_logrank_p
+LumA,719,111,0.848,0.047,5.86e-22

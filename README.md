@@ -37,7 +37,8 @@ breast-cancer-prediction/
 │   ├── 08_shap_analysis.ipynb
 │   ├── 09_stability_analysis.ipynb
 │   ├── 10_calibration.ipynb
-│   └── 11_figure_generation.ipynb
+│   ├── 11_figure_generation.ipynb
+│   └── 12_subtype_baseline.ipynb
 ├── src/
 │   ├── __init__.py
 │   ├── data_loader.py                   Data loading utilities
@@ -106,6 +107,10 @@ All figures are regenerated in `figures/` and all result CSVs in `results/`.
 | ssGSEA Comparison | AUC Delta | +0.010 to +0.038 | - | - |
 | Stability | Spearman rho | - | - | 0.820 |
 | KM Log-rank | p-value | - | - | < 5.7e-53 |
+| Subtype-Only Baseline | AUC | - | - | 0.613 |
+| Combined vs Subtype | Delta | - | - | +0.243 |
+| Within Luminal A | CV C-index | - | - | 0.848 |
+| Within Luminal A | Log-rank p | - | - | 5.86e-22 |
 
 ## Data Sources
 

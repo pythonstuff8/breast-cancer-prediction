@@ -1,0 +1,5 @@
+model,subtype_only_auc,subtype_only_std,combined_auc,delta
+Elastic Net,0.613,0.040,0.855,+0.242
+Random Forest,0.613,0.040,0.856,+0.243
+Gradient Boosting,0.613,0.040,0.827,+0.214
+Cox C-index,0.613,0.020,0.827,+0.214
