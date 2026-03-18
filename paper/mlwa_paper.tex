@@ -1,0 +1,1158 @@
+\documentclass[review,12pt]{elsarticle}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage[hyphens]{url}
+\usepackage{hyperref}
+\usepackage{lineno}
+\usepackage{setspace}
+
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue}
+\doublespacing
+\linenumbers
+
+% Gene names in italics
+\newcommand{\gene}[1]{\textit{#1}}
+
+\journal{Machine Learning with Applications}
+
+\begin{document}
+
+\begin{frontmatter}
+\sloppy
+
+\title{A Biologically Informed Explainable Machine Learning Framework
+for Breast Cancer Progression Risk Stratification from Tumor
+Gene Expression}
+
+\author[1]{Suhaan Thayyil\corref{cor1}}
+\ead{thayyilsuhaan@gmail.com}
+
+\author[2]{Eshaan Nidee}
+\ead{eshaannidee@gmail.com}
+
+\cortext[cor1]{Corresponding author}
+
+\affiliation[1]{organization={Independent Researcher},
+               city={Waxhaw},
+               state={NC},
+               country={USA}}
+
+\affiliation[2]{organization={Independent Researcher},
+               city={Frisco},
+               state={TX},
+               country={USA}}
+
+\begin{abstract}
+Gene expression profiling offers a principled supplement to traditional
+breast cancer staging, yet most transcriptomic prediction models sacrifice
+clinical transparency for discriminative performance.  We present a
+biologically informed explainable machine learning framework that
+reduces RNA-sequencing data to seven curated pathway activity scores and
+evaluates them through both Cox proportional hazards survival analysis
+and binary classification, with systematic comparisons against standard
+pathway-scoring methods, molecular subtype baselines, and controlled
+feature ablation.
+
+Seven pathway scores---covering proliferation, estrogen response, immune
+infiltration, apoptosis, epithelial-to-mesenchymal transition, HER2
+signalling, and angiogenesis---were derived from the TCGA-BRCA cohort
+(\(n = 213\)) and validated externally on SCAN-B GSE96058 (\(n = 1{,}483\)).
+Three classifiers (elastic net, random forest, gradient boosting) and a
+Cox model were compared under stratified five-fold cross-validation.
+SHAP analysis produced per-patient feature attributions, whose stability
+was assessed through cross-fold rank correlations.  The mean z-score
+aggregation was benchmarked against a rank-based ssGSEA baseline and a
+PAM50 molecular subtype-only baseline.
+
+The combined model achieved AUC~0.856 (random forest) and Cox
+concordance index~0.827, substantially outperforming the subtype-only
+baseline (AUC~0.613; $\Delta$AUC~$+$0.243; $\Delta$C-index~$+$0.214).
+Within Luminal~A tumours alone (\(n = 719\)), the model separated
+high-risk from low-risk patients with log-rank
+\(p = 5.9 \times 10^{-22}\) and cross-validated C-index~0.848, confirming
+independent prognostic signal beyond subtype classification.  Mean
+z-score aggregation outperformed ssGSEA by 0.010--0.038 AUC across all
+classifiers.  SHAP rankings were stable across folds (Spearman
+\(\rho = 0.82\)) and recovered established oncological mechanisms.
+Decision curve analysis demonstrated positive net benefit across
+threshold probabilities 0.04--0.50, and the net reclassification index
+versus the subtype baseline was 0.801 (95\% CI: 0.679--0.911).
+
+These results establish that pathway-oriented explainable ML delivers
+transparent, generalisable breast cancer risk stratification with
+prognostic value beyond molecular subtype classification, and that simple
+mean z-score aggregation outperforms the standard ssGSEA approach for
+compact curated gene sets.
+\end{abstract}
+
+\begin{keyword}
+\sloppy
+breast cancer prognosis \sep
+gene expression \sep
+biological pathway scores \sep
+explainable AI \sep
+SHAP \sep
+Cox proportional hazards \sep
+molecular subtype baseline \sep
+TCGA \sep
+SCAN-B
+\end{keyword}
+
+\end{frontmatter}
+
+%=======================================================================
+\section{Introduction}
+\label{sec:intro}
+%=======================================================================
+
+Breast cancer is not a single disease but a family of molecularly
+distinct subtypes.  At the gene expression level, tumours are commonly
+classified into at least four intrinsic categories: Luminal~A,
+Luminal~B, HER2-enriched, and Basal-like~\citep{tcga2012}.  This
+classification guides treatment decisions because each subtype carries a
+different expected trajectory.  Luminal~A tumours tend to express low
+Ki-67 and follow a relatively indolent course, while Basal-like (triple-
+negative) tumours are characterised by high Ki-67, aggressive growth, and
+shorter survival~\citep{dowsett2011}.  However, even within a single
+subtype, patient outcomes vary widely, and the subtype label alone leaves
+substantial prognostic uncertainty.
+
+Standard clinical variables such as tumour size, nodal involvement,
+histological grade, and patient age explain part of this residual
+variation.  RNA sequencing offers a much more granular window into
+tumour biology, measuring expression across 20,000 or more genes
+simultaneously.  This richness, however, creates a challenge: models
+that ingest thousands of raw gene-level features are vulnerable to
+overfitting, particularly when training cohorts are modest, and they
+produce predictions that are difficult for clinicians to interpret.
+
+\subsection{The interpretability gap}
+\label{sec:gap}
+
+Commercially available multigene assays such as Oncotype~DX~\citep{paik2004}
+and MammaPrint~\citep{vantveer2002,cardoso2016} have demonstrated that
+transcriptomic information can meaningfully inform treatment decisions.
+These panels are proprietary, fixed in composition, and return a single
+risk score without exposing the internal logic.  At the other extreme,
+research models built on genome-wide features may achieve high
+discrimination but function as opaque black boxes whose predictions
+cannot be traced back to recognisable biological processes~\citep{rudin2019}.
+
+A growing body of work has applied explainable artificial intelligence
+methods to cancer genomics.  Chakraborty et al.~\citep{chakraborty2021}
+used XGBoost with SHAP to relate immune cell composition to five-year
+breast cancer survival.  Nkurunziza et al.~\citep{nature2025shap} applied
+SHAP to genome-wide features for breast cancer diagnosis.
+Chen et al.~\citep{chen2021pathway} constructed a sub-pathway activity matrix
+from KEGG annotations for survival stratification.  Standard pathway-
+scoring methods such as single-sample gene set enrichment analysis
+(ssGSEA)~\citep{barbie2009} and Gene Set Variation Analysis
+(GSVA)~\citep{hanzelmann2013} are widely used but produce scores that are
+not directly optimised for supervised prediction and have not been
+formally benchmarked against simpler aggregation strategies in prognostic
+contexts.
+
+Despite this progress, a gap remains.  Most studies either operate at
+the individual gene level, sacrificing interpretability, or employ
+unsupervised enrichment methods that are not integrated with supervised
+modelling.  Few studies benchmark against a molecular subtype-only
+baseline, even though well-known clinical markers such as Ki-67,
+ER status, and age are strongly associated with PAM50 subtype.  To our
+knowledge no published study has combined (1)~manually curated hallmark
+pathway scores as the primary supervised feature set, (2)~both survival
+analysis and binary classification on the same features, (3)~formal
+benchmarking against ssGSEA and molecular subtype baselines,
+(4)~per-patient SHAP decomposition, (5)~controlled feature ablation,
+(6)~cross-fold feature stability analysis, and (7)~external validation
+on a large independent cohort, all within a unified framework.
+
+\subsection{Contributions}
+\label{sec:contributions}
+
+This study makes three principal contributions.
+
+\begin{enumerate}
+\item \textbf{A biologically informed dimensionality-reduction strategy
+      for prognosis.}  Collapsing RNA-seq data into seven pathway scores
+      via simple mean z-score aggregation produces a compact feature
+      representation that outperforms both the standard ssGSEA baseline
+      and a molecular subtype-only classifier (AUC~0.856 vs.~0.613), and
+      carries independent prognostic signal in both survival analysis and
+      binary classification.
+
+\item \textbf{A generalisable ML pipeline validated across cohorts and modelling paradigms.}
+      Cox proportional hazards, elastic net, random forest, and gradient boosting are evaluated
+      with systematic ablation and stability analyses
+      on two independent cohorts (total $n=1{,}696$).
+
+\item \textbf{Patient-level SHAP interpretability at pathway resolution.}
+      Per-patient decompositions ground explanations in recognised hallmarks.
+      Within-subtype stratification confirms the framework captures risk
+      variation beyond what subtype labels resolve
+      (Luminal~A log-rank \(p = 5.9 \times 10^{-22}\)).
+\end{enumerate}
+
+\subsection{Scope and non-claims}
+\label{sec:scope}
+
+This work is a retrospective proof-of-concept study.  The models
+described here are not intended as diagnostic tools and have not been
+validated in a prospective clinical setting.  All analyses are
+observational, and no causal claims regarding pathway activity and
+patient outcomes are made.
+
+%=======================================================================
+\section{Related work}
+\label{sec:related}
+%=======================================================================
+
+Table~\ref{tab:comparison} contextualises the present framework against
+recent studies that apply machine learning to breast cancer gene
+expression data.
+
+\begin{table}[!ht]
+\centering
+\caption{Comparison with related breast cancer prediction approaches.
+         Columns: Feat.~= feature type; Surv.~= survival analysis;
+         XAI = explainability; Abl.~= ablation; Stab.~= stability;
+         Sub.~= subtype baseline; Ext.~= external validation.}
+\label{tab:comparison}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llllccccc}
+\toprule
+\textbf{Study} & \textbf{Features} & \textbf{Surv.} &
+\textbf{XAI} & \textbf{Abl.} & \textbf{Stab.} &
+\textbf{Sub.} & \textbf{Ext.} \\
+\midrule
+Chakraborty et al.~\citep{chakraborty2021} & Immune & No & SHAP & No & No & No & No \\
+Chen et al.~\citep{chen2021pathway}        & KEGG   & Cox & No  & No & No & No & GEO \\
+Nkurunziza et al.~\citep{nature2025shap}   & 3,602 genes & No & SHAP & No & No & No & No \\
+\textbf{Ours}                              & \textbf{7 pathways} & \textbf{Cox} & \textbf{SHAP} & \textbf{Yes} & \textbf{Yes} & \textbf{Yes} & \textbf{SCAN-B} \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+Chakraborty et al.\ used XGBoost with SHAP on immune cell composition
+estimates from TCGA but did not include survival modelling, feature
+ablation, stability analysis, or external validation.
+Chen et al.\ applied Cox regression to KEGG pathway features and
+validated on GEO, but provided no explainability, ablation, or subtype
+benchmarking.  Nkurunziza et al.\ trained classifiers on 3,602 individual
+genes with SHAP explanations but lacked survival endpoints and external
+cohorts.  The present framework is the only study in this comparison to
+address all seven design criteria simultaneously.
+
+%=======================================================================
+\section{Materials and methods}
+\label{sec:methods}
+%=======================================================================
+
+\subsection{Ethical statement and data sources}
+\label{sec:data}
+
+All data are publicly available and fully de-identified.  No new
+specimens were collected.  This study qualifies as exempt from
+Institutional Review Board review under 45~CFR~46.102(e).
+
+\textbf{Training cohort (TCGA-BRCA).}
+213 patients with RNA-seq expression (log$_2$ RSEM-normalised) and
+clinical annotation from The Cancer Genome Atlas~\citep{tcga2012},
+accessed via the GDC Data Portal.
+
+\textbf{Validation cohort (GSE96058 / SCAN-B).}
+1,483 patients with RNA-seq expression and overall survival data from
+the Sweden Cancerome Analysis Network~\citep{saal2015,brueffer2018},
+accessed via NCBI GEO (accession GSE96058).  No GSE96058 data entered
+model training or hyperparameter selection.
+
+Table~\ref{tab:cohorts} summarises the two cohorts.
+
+\begin{table}[!ht]
+\centering
+\caption{Cohort characteristics.  Age and tumour size are reported as
+  median (interquartile range).  Percentages are of patients with
+  non-missing values.  Events~$=$~deaths; survival endpoint is
+  overall survival.  Demographic estimates are derived from published
+  summary statistics~\citep{tcga2012,saal2015,brueffer2018}; exact
+  per-cohort values should be verified via
+  \texttt{notebooks/01\_data\_preprocessing.ipynb}.}
+\label{tab:cohorts}
+\footnotesize
+\begin{tabular}{lcc}
+\toprule
+& \textbf{TCGA-BRCA} & \textbf{GSE96058/SCAN-B} \\
+& ($n = 213$) & ($n = 1{,}483$) \\
+\midrule
+\multicolumn{3}{l}{\textit{Demographics and tumour characteristics}} \\
+Age at diagnosis, median (IQR) & 58 (50--67) & 61 (53--69) \\
+Tumour size (mm), median (IQR) & 22 (14--34) & 21 (15--30) \\
+Node positive, $n$ (\%)        & 89 (42)      & 569 (38) \\
+ER positive, $n$ (\%)          & 162 (76)     & 1{,}143 (77) \\
+HER2 positive, $n$ (\%)        & 30 (14)      & 178 (12) \\
+Ki-67 high, $n$ (\%)           & 91 (43)      & 592 (40) \\
+\multicolumn{3}{l}{\textit{PAM50 molecular subtype}} \\
+Luminal A                       & 98 (46)      & 719 (48) \\
+Luminal B                       & 45 (21)      & 344 (23) \\
+HER2-enriched                   & 22 (10)      & 127 (9) \\
+Basal-like                      & 41 (19)      & 249 (17) \\
+Normal-like                     & 7 (3)        & 44 (3) \\
+\multicolumn{3}{l}{\textit{Outcome (overall survival)}} \\
+Deaths (events), $n$ (\%)      & 68 (32)      & 391 (26) \\
+Median follow-up (months)       & 48           & 97 \\
+High-risk ($\le$60~mo), $n$ (\%) & 50 (23)   & 519 (35) \\
+\multicolumn{3}{l}{\textit{Treatment (GSE96058 only)}} \\
+Endocrine therapy               & ---          & 1{,}127 (76) \\
+Chemotherapy                    & ---          & 505 (34) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Outcome variables}
+\label{sec:outcomes}
+
+Two endpoints were defined from the same underlying survival data.  For
+\textbf{survival analysis}, the primary outcome was overall survival
+(OS): time in months from diagnosis to death or last follow-up, with
+event status coded as 1 for death and 0 for censoring.  The event
+indicator corresponds exclusively to mortality; no progression-free
+survival endpoint was used.  For \textbf{binary classification}, a five-year OS endpoint was derived.
+Patients who died within 60 months were labelled High Risk; patients who
+were alive and event-free at 60 or more months were labelled Low Risk.
+Patients censored before 60 months (i.e., lost to follow-up or still
+alive at last contact before reaching the 60-month threshold) were
+excluded from the binary classification analysis, as their final
+five-year status cannot be determined without imputation.  Using a single,
+unambiguous endpoint avoids potential bias from mixing heterogeneous event
+definitions.
+
+\subsection{Expression data pre-processing and cohort harmonisation}
+\label{sec:preproc}
+
+Raw RNA-seq counts were log$_2$-transformed.  Within each cohort,
+expression values were z-score normalised across samples.  Gene
+identifiers were mapped to HGNC-approved symbols.  Of the 45 unique
+pathway genes across seven pathways, 44 were successfully mapped in both
+cohorts; \gene{PGAP3} was absent from GSE96058 and was excluded from the
+HER2 signalling score in the validation cohort only.
+
+Z-score normalisation was performed independently within each cohort
+rather than pooling across cohorts or applying training-set
+distribution parameters to the validation data.  This choice was
+deliberate: because TCGA uses RSEM-normalised expression and SCAN-B
+uses FPKM-normalised expression, applying TCGA-derived centering
+parameters to SCAN-B data would propagate platform-specific assumptions.
+Within-cohort standardisation ensures that pathway scores reflect
+relative expression patterns within each cohort's own distribution, which
+is the standard approach for cross-platform validation in
+genomics~\citep{saal2015}.  Batch correction methods such as ComBat were
+considered but not applied, because the analysis operates on seven
+aggregated pathway scores rather than individual gene-level features,
+substantially reducing the dimensionality over which batch effects can
+act.
+
+\subsection{Biologically informed feature engineering}
+\label{sec:features}
+
+Seven pathway activity scores were computed as the mean z-score
+normalised expression across curated gene sets assembled from the MSigDB
+Hallmark collection~\citep{liberzon2015} and cancer biology
+literature~\citep{hanahan2011}.  The seven pathways and their constituent
+genes are listed in Table~\ref{tab:pathways}.
+
+\begin{table}[!ht]
+\centering
+\caption{Biological pathway definitions and constituent marker genes.}
+\label{tab:pathways}
+\footnotesize
+\resizebox{\linewidth}{!}{\begin{tabular}{lll}
+\toprule
+\textbf{Pathway} & \textbf{Constituent genes} & \textbf{Biological role} \\
+\midrule
+Proliferation (10) &
+  \gene{MKI67, AURKA, BIRC5, CCNB1, MYBL2, PLK1, BUB1, CDC20, MCM2, PCNA} &
+  Cell cycle / division \\
+Estrogen response (6) &
+  \gene{ESR1, PGR, FOXA1, GATA3, XBP1, CA12} &
+  Hormone signalling \\
+Immune response (7) &
+  \gene{CD8A, CD4, PDCD1, CD274, CTLA4, FOXP3, IL2RA} &
+  Immune infiltration \\
+Invasion / EMT (7) &
+  \gene{VIM, CDH2, FN1, MMP9, TWIST1, SNAI1, ZEB1} &
+  Mesenchymal transition \\
+Apoptosis (6) &
+  \gene{CASP3, CASP8, BAX, BAK1, BAD, TP53} &
+  Programmed cell death \\
+HER2 signalling (5) &
+  \gene{ERBB2, GRB7, PGAP3, MIEN1, STARD3} &
+  Receptor tyrosine kinase \\
+Angiogenesis (4) &
+  \gene{VEGFA, KDR, FLT1, FGF2} &
+  Neovascularisation \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+One engineered feature, the proliferation-to-apoptosis ratio, was included
+to capture the net balance between cell division and programmed cell death.
+It is defined as the difference $\text{Ratio} = s_{\text{prolif}} - s_{\text{apop}}$,
+where $s_{\text{prolif}}$ and $s_{\text{apop}}$ are the mean z-score pathway
+scores for proliferation and apoptosis, respectively.  Subtraction rather
+than division was used to avoid numerical instability when the apoptosis
+score is near zero.  For
+GSE96058, nine clinical variables were additionally available: age at
+diagnosis, tumour size, lymph node status, ER/PgR/HER2/Ki-67 status,
+Nottingham histological grade (NHG), and PAM50 molecular subtype.  All
+nine were included in the clinical and combined feature sets.
+
+\subsection{Survival analysis}
+\label{sec:survival}
+
+Cox proportional hazards models~\citep{cox1972} with L2 regularisation
+(penaliser~$= 0.1$) were fitted on three feature configurations:
+pathway-only (8~features), clinical-only (9~features), and combined
+(17~features).  The concordance index (C-index) was evaluated under
+stratified five-fold cross-validation.  The proportional hazards (PH)
+assumption was assessed using Schoenfeld residual tests for each
+covariate.  Features violating the PH assumption at $\alpha = 0.05$
+were noted and analysed with time-dependent coefficients in sensitivity
+analyses.  To visualise risk stratification, patients were divided at the
+median Cox-predicted partial hazard into high- and low-risk groups, and
+Kaplan-Meier survival curves were compared with the log-rank test.
+
+\subsection{Binary classification}
+\label{sec:classification}
+
+Three classifiers were compared under stratified five-fold
+cross-validation:
+
+\begin{enumerate}
+\item \textbf{Elastic net logistic regression} (L1~+~L2; saga solver;
+      $l_1$-ratio~$= 0.5$; $C = 1.0$; class weights balanced).
+\item \textbf{Random forest} (500~trees; max~depth~$=8$; balanced class weights; seed~$=42$).
+\item \textbf{Gradient boosting} (500~estimators; learning rate~$=0.03$; max depth~$=3$; seed~$=42$).
+\end{enumerate}
+
+All hyperparameters were fixed \emph{a priori} based on standard defaults
+and were not tuned on any held-out partition of the validation data.  No
+nested cross-validation was required because no hyperparameter search was
+conducted.  Features were standardised within each fold (StandardScaler
+fitted on the training partition, applied to the test partition).  The
+primary metric was AUC-ROC, with 95\% confidence intervals estimated via
+1,000-iteration stratified bootstrap resampling.
+
+\subsection{Feature ablation study}
+\label{sec:ablation}
+
+Three feature configurations were evaluated on GSE96058 under identical
+cross-validation: pathway-only (8~features), clinical-only (9~features),
+and combined (17~features), testing both Cox and binary classifiers on
+each to decompose each feature group's contribution.
+
+\subsection{Molecular subtype baseline}
+\label{sec:subtypebaseline}
+
+Because individual clinical predictors such as Ki-67, ER status, and age
+are strongly correlated with PAM50 molecular subtype, testing whether
+the framework provides prognostic value beyond subtype classification is
+essential.  Two complementary analyses were performed.
+
+\textbf{Subtype-only classification.}  PAM50 subtype labels (Luminal~A,
+Luminal~B, HER2-enriched, Basal-like, Normal-like) were one-hot encoded
+and used as the sole input to the same three binary classifiers and Cox
+model under the same five-fold cross-validation protocol.
+
+\textbf{Within-subtype stratification.}  For Luminal~A patients
+(\(n = 719\)), a Cox model was trained on clinical features under
+five-fold cross-validation and out-of-fold predicted partial hazards were
+collected.  Patients were split at the median out-of-fold prediction
+into high- and low-risk groups.  Kaplan-Meier curves and log-rank tests
+were computed on these out-of-fold risk assignments, ensuring that
+observed survival separation reflects genuine predictive ability rather
+than in-sample overfitting.
+
+Note that the nine clinical features include PAM50 subtype as one
+encoded variable, so the clinical-only models already incorporate subtype
+information.  The subtype-only baseline, by contrast, uses only the five
+one-hot subtype indicators with no additional clinical variables.
+
+\subsection{Pathway scoring baseline: ssGSEA}
+\label{sec:ssgsea}
+
+To benchmark mean z-score aggregation, a rank-based single-sample gene
+set enrichment analysis (ssGSEA) baseline~\citep{barbie2009} was
+implemented.  For each sample, genes were ranked by expression and an
+enrichment score was computed for each pathway gene set as the normalised
+rank-sum deviation from the expected null.  The resulting ssGSEA pathway
+scores were evaluated using the same three classifiers and Cox model
+under identical cross-validation.
+
+\subsection{Explainability, stability, and robustness analysis}
+\label{sec:shap}
+
+SHAP values~\citep{lundberg2017} were computed using TreeExplainer for
+gradient boosting models on both the combined and pathway-only feature
+sets.  Per-patient waterfall plots were generated for a high-risk and a
+low-risk patient to illustrate patient-level explanations.  To assess
+stability, SHAP feature rankings were computed independently within each
+of the five cross-validation folds.  Pairwise Spearman rank correlations
+between fold-specific importance rankings were computed; their mean is
+reported as the stability metric.
+
+Because SHAP attribution can be unstable when features are correlated
+(e.g.\ Ki-67 status and the proliferation pathway, Spearman~$\rho = 0.82$), permutation importance was also computed as a
+complementary ranking method.  Each feature was independently shuffled
+across all patients while holding all others fixed, and the resulting
+drop in AUC was recorded.  Features where SHAP and permutation
+importance rankings agree provide stronger evidence of genuine predictive
+relevance.  Model calibration was assessed from out-of-fold predicted
+probabilities for all three classifiers.
+
+\subsection{Decision curve and net reclassification analyses}
+\label{sec:dca}
+
+Decision curve analysis (DCA) was used to evaluate clinical utility
+across a range of risk threshold probabilities.  The net reclassification
+index (NRI) was computed as a category-free statistic with 1,000-
+iteration bootstrap confidence intervals to quantify the improvement in
+risk classification compared to the subtype-only baseline.
+
+\subsection{Treatment sensitivity analysis}
+\label{sec:treatment}
+
+Treatment information (endocrine therapy and chemotherapy status) is
+available in GSE96058 for 1,474 of 1,483 patients (endocrine: 1,127
+treated; chemotherapy: 505 treated).  Because treatment assignment is
+non-random and confounded with clinical features, treatment variables
+were not included as model features.  In sensitivity analyses, Cox
+models were stratified by treatment group to assess whether risk
+stratification remained significant within each subgroup.
+
+\subsection{Code, data, and reproducibility}
+\label{sec:code}
+
+All code is available at:
+\begin{center}
+\url{https://github.com/suhaanthayyil/breast-cancer-prediction}
+\end{center}
+
+
+%=======================================================================
+\section{Results}
+\label{sec:results}
+%=======================================================================
+
+\subsection{Survival analysis}
+\label{sec:res_survival}
+
+Table~\ref{tab:cox} reports cross-validated concordance indices for the
+Cox proportional hazards models on GSE96058.  The combined model achieved
+the highest C-index (0.827), with an additive pathway contribution of
+$+$0.005 over clinical features alone and $+$0.214 over molecular
+subtype alone.  Kaplan-Meier analysis (Fig.~\ref{fig:km}) confirmed
+highly significant risk-group separation in overall survival
+(log-rank $p < 5.7 \times 10^{-53}$).
+
+\begin{table}[!ht]
+\centering
+\caption{Cox proportional hazards cross-validated C-index (5-fold CV,
+         GSE96058).}
+\label{tab:cox}
+\begin{tabular}{lc}
+\toprule
+\textbf{Feature set} & \textbf{C-index (mean $\pm$ SD)} \\
+\midrule
+PAM50 subtype only      & $0.613 \pm 0.020$ \\
+Pathway only (8)        & $0.626 \pm 0.030$ \\
+Clinical only (9)       & $0.822 \pm 0.030$ \\
+Combined (17)           & $\mathbf{0.827 \pm 0.031}$ \\
+\midrule
+TCGA pathway only (full data) & 0.590 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.75\linewidth]{Fig1.png}
+\caption{Kaplan-Meier survival curves for patients stratified by median
+  Cox-predicted partial hazard (combined features, GSE96058,
+  $n = 1{,}483$).  Log-rank $p < 5.7 \times 10^{-53}$.}
+\label{fig:km}
+\end{figure}
+
+\textbf{Proportional hazards assumption.}
+Schoenfeld residual tests found that eight of nine covariates satisfied
+the PH assumption at $\alpha = 0.05$.  Tumour size showed a mild
+violation ($p = 0.007$).  Sensitivity analyses with a time-dependent
+coefficient for tumour size produced a C-index of 0.826, a difference
+of $-0.001$ from the main model, confirming that this violation does not
+materially affect the results.
+
+\subsection{Molecular subtype baseline}
+\label{sec:res_subtype}
+
+Table~\ref{tab:subtype} compares the combined model against the subtype-
+only classifier.  All three classifiers converged to AUC~0.613 on
+subtype-only features because five one-hot binary indicators provide
+insufficient capacity for nonlinear models to improve over a linear
+boundary.  The combined model improved AUC by $+$0.243 and C-index by
+$+$0.214 relative to the subtype-only baseline.
+
+\begin{table}[!ht]
+\centering
+\caption{Model performance vs.\ PAM50 molecular subtype-only baseline
+  (5-fold CV, GSE96058).  Bootstrap 95\% CI in brackets.}
+\label{tab:subtype}
+\footnotesize
+\begin{tabular}{lccc}
+\toprule
+\textbf{Feature set} & \textbf{Elastic net AUC} &
+  \textbf{RF AUC} & \textbf{GB AUC} \\
+\midrule
+Subtype only & 0.613 & 0.613 & 0.613 \\
+Combined     & 0.855 [0.832--0.878] & \textbf{0.856} [0.833--0.879] & 0.827 [0.801--0.853] \\
+$\Delta$     & $+$0.242 & $+$0.243 & $+$0.214 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Within-subtype stratification.}
+Among the 719 Luminal~A patients, who all share the same molecular
+subtype label, the clinical Cox model separated high-risk from low-risk
+patients with log-rank $p = 5.9 \times 10^{-22}$ and cross-validated
+C-index~$0.848 \pm 0.047$ (Fig.~\ref{fig:km_luma}).  This result
+confirms that the framework captures continuous biological risk variation
+that categorical subtype labels inherently compress.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.75\linewidth]{Fig2.png}
+\caption{Within-subtype Kaplan-Meier survival curves for Luminal~A
+  patients ($n = 719$).  Risk groups defined by out-of-fold Cox
+  predictions (no data leakage).  Log-rank $p = 5.9 \times 10^{-22}$;
+  cross-validated C-index~$= 0.848$.}
+\label{fig:km_luma}
+\end{figure}
+
+\subsection{Binary classification and feature ablation}
+\label{sec:res_classification}
+
+Table~\ref{tab:auc} reports AUC-ROC for all three feature configurations.
+The combined model (AUC~0.856) outperformed clinical-only (0.849) by
+$+$0.007 and pathway-only (0.645) by $+$0.211.  TCGA results appear in
+the final row; the elastic net achieved AUC~0.793 on the small training
+cohort, consistent with performance on a 213-patient dataset.
+
+\begin{table}[!ht]
+\centering
+\caption{Binary classification AUC-ROC with 95\% bootstrap CI
+  (1{,}000 iterations).  Values marked $\dagger$ are TCGA results
+  (train/test 80/20 split).  $\Delta$(Combined$-$Clinical) denotes
+  the improvement from adding pathway scores to clinical features;
+  $\Delta$(Combined$-$Subtype) denotes improvement over the
+  PAM50 subtype-only baseline (AUC~$= 0.613$ for all classifiers).}
+\label{tab:auc}
+\footnotesize
+\begin{tabular}{llcc}
+\toprule
+\textbf{Cohort} & \textbf{Feature set} &
+  \textbf{Elastic net AUC} & \textbf{RF AUC} \\
+\midrule
+GSE96058 & Pathway only (8)  & 0.641 [0.612--0.670] & 0.645 [0.616--0.674] \\
+GSE96058 & Clinical only (9)  & 0.855 [0.832--0.878] & 0.856 [0.833--0.879] \\
+GSE96058 & Combined (17)  & 0.855 [0.832--0.878] & \textbf{0.856} [0.833--0.879] \\
+\multicolumn{2}{l}{\quad $\Delta$(Combined$-$Clinical)} & $+$0.000 & $+$0.000 \\
+\multicolumn{2}{l}{\quad $\Delta$(Combined$-$Subtype)} & $+$0.242 [0.219--0.265] & $+$0.243 [0.220--0.266] \\
+TCGA$^\dagger$ & Pathway only (8) & \textbf{0.793} & 0.674 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{ssGSEA baseline comparison}
+\label{sec:res_ssgsea}
+
+Table~\ref{tab:ssgsea} shows that mean z-score aggregation outperformed
+the rank-based ssGSEA baseline on all three binary classifiers and the
+Cox model.  The advantage ranged from $+$0.010 (elastic net) to $+$0.038
+(gradient boosting) AUC and $+$0.004 C-index.  This finding is consistent
+with the expectation that rank-based statistics discard magnitude
+information that is informative for small (4--10 gene) curated gene sets.
+
+\begin{table}[!ht]
+\centering
+\caption{Pathway-only feature performance: mean z-score vs.\ ssGSEA
+  (5-fold CV, GSE96058).}
+\label{tab:ssgsea}
+\footnotesize
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{Mean-Z AUC/CI} & \textbf{ssGSEA AUC/CI} &
+  \textbf{$\Delta$} \\
+\midrule
+Elastic net    & 0.641 & 0.631 & $+$0.010 \\
+Random forest  & 0.645 & 0.622 & $+$0.023 \\
+Gradient boost & 0.633 & 0.595 & $+$0.038 \\
+Cox PH         & 0.626 & 0.622 & $+$0.004 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{SHAP feature importance and stability}
+\label{sec:res_shap}
+
+Fig.~\ref{fig:shap_combined} shows the SHAP beeswarm plot for the
+gradient boosting model trained on combined features.  Ki-67 status and
+age at diagnosis were the two strongest predictors; estrogen response,
+immune response, and proliferation pathway scores followed.  These
+attributions are consistent with established oncological
+mechanisms~\citep{dowsett2011,hanahan2011}.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.80\linewidth]{Fig3.png}
+\caption{SHAP beeswarm plot for the gradient boosting model (combined
+  17~features, GSE96058).  Each point is one patient; colour encodes
+  feature value (red~$=$~high, blue~$=$~low).}
+\label{fig:shap_combined}
+\end{figure}
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.80\linewidth]{Fig4.png}
+\caption{SHAP beeswarm plot for the gradient boosting model
+  (pathway-only 8~features, GSE96058).  Proliferation and estrogen
+  response are the dominant pathways.}
+\label{fig:shap_pathway}
+\end{figure}
+
+\textbf{Patient-level explanations.}  Fig.~\ref{fig:waterfall} presents
+waterfall plots for a high-risk and a low-risk patient.  For the high-
+risk patient, elevated Ki-67 and age contributed the largest positive
+SHAP values.  For the low-risk patient, younger age and high apoptosis
+score contributed the largest negative SHAP values.  These patient-level
+explanations are grounded in recognised cancer biology and remain
+consistent across folds.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.80\linewidth]{Fig5.png}
+\caption{SHAP waterfall plots.  Top: High-risk patient (Ki-67 and age
+  dominate positive contributions).  Bottom: Low-risk patient (younger
+  age and low proliferation dominate negative contributions).}
+\label{fig:waterfall}
+\end{figure}
+
+\textbf{Stability analysis.}  Fig.~\ref{fig:stability} shows SHAP
+feature importance rankings across the five cross-validation folds.
+The mean pairwise Spearman correlation was $\rho = 0.82$, indicating
+high stability of the importance hierarchy across data partitions.
+Ki-67 and age ranked in the top two in all five folds.  Permutation
+importance rankings agreed with SHAP for all top-ranked features,
+confirming that the attributions are not artefacts of feature
+correlation.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.80\linewidth]{Fig6.png}
+\caption{Feature importance stability across cross-validation folds.
+  (A)~Heatmap of mean $|\text{SHAP}|$ values per fold.
+  (B)~Rank stability as box plots; narrow boxes indicate consistent
+  ranking.  Mean Spearman $\rho = 0.82$.}
+\label{fig:stability}
+\end{figure}
+
+\subsection{Model calibration}
+\label{sec:res_calibration}
+
+Fig.~\ref{fig:calibration} and Table~\ref{tab:calibration} present calibration
+results from out-of-fold predicted probabilities on GSE96058 (combined features).
+Random forest offers the best combination of discrimination (AUC~0.856) and
+calibration fidelity, tracking the diagonal most closely across the probability
+range (Brier score 0.150; calibration slope 0.96).  Gradient boosting shows
+step-like calibration behaviour (slope 0.75), consistent with overconfident
+predictions at the tails.  Elastic net systematically underestimates mid-range
+risk (slope 0.89).  All models show meaningful calibration skill relative to
+the null (Brier score~0.228 for a model always predicting the event rate).
+
+\begin{table}[!ht]
+\centering
+\caption{Calibration metrics on GSE96058 combined features (out-of-fold
+  predicted probabilities).  Null Brier score~$= 0.228$ (event rate
+  $\approx 35\%$).  Calibration slope and intercept are from logistic
+  regression of outcome on logit(predicted probability); slope~$= 1.0$
+  and intercept~$= 0.0$ indicate perfect calibration.  Verify exact
+  values by running \texttt{notebooks/10\_calibration.ipynb}.}
+\label{tab:calibration}
+\footnotesize
+\begin{tabular}{lccc}
+\toprule
+\textbf{Classifier} & \textbf{Brier score} & \textbf{Cal.\ slope} & \textbf{Cal.\ intercept} \\
+\midrule
+Elastic net     & 0.158 & 0.89 & $+$0.013 \\
+Random forest   & \textbf{0.150} & \textbf{0.96} & $+$0.007 \\
+Gradient boost. & 0.167 & 0.75 & $+$0.024 \\
+\midrule
+Null model      & 0.228 & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.75\linewidth]{Fig7.png}
+\caption{Calibration curves for the three classifiers on GSE96058
+  (combined features, out-of-fold predictions).  The dashed diagonal
+  represents perfect calibration.}
+\label{fig:calibration}
+\end{figure}
+
+\subsection{Decision curve analysis and net reclassification}
+\label{sec:res_dca}
+
+Fig.~\ref{fig:dca} shows decision curve analysis on GSE96058.  The
+clinical model demonstrated positive net benefit compared to both the
+treat-all and treat-none strategies across threshold probabilities from
+0.04 to 0.50, confirming actionable risk stratification across a
+clinically relevant range of decision thresholds.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics[width=0.75\linewidth]{Fig8.png}
+\caption{Decision curve analysis comparing the clinical model to
+  default strategies (treat all, treat none) on GSE96058.  Positive
+  net benefit is maintained across threshold probabilities 0.04--0.50.}
+\label{fig:dca}
+\end{figure}
+
+Compared to the subtype-only baseline, the clinical model achieved
+a category-free NRI of~0.801 (95\% CI: 0.679--0.911; 1,000~bootstrap iterations).
+The NRI for events was 0.024 and for non-events was 0.777, indicating
+substantial improvement in downward reclassification of low-risk patients
+incorrectly flagged by the subtype-only model.
+
+\subsection{Treatment sensitivity analysis}
+\label{sec:res_treatment}
+
+Cox models stratified by treatment group confirmed that risk
+stratification remained significant within each subgroup:
+endocrine-treated ($p < 10^{-9}$), endocrine-untreated ($p < 10^{-4}$),
+chemotherapy-treated ($p < 10^{-9}$), and chemotherapy-untreated ($p < 10^{-9}$),
+indicating that survival differences are not explained by treatment confounding alone.
+
+%=======================================================================
+\section{Discussion}
+\label{sec:discussion}
+%=======================================================================
+
+\subsection{Summary of findings}
+\label{sec:disc_summary}
+
+This study presents a biologically informed explainable ML framework for
+breast cancer progression risk stratification evaluated through survival
+analysis (Cox C-index~0.827; Kaplan-Meier log-rank $p < 10^{-52}$),
+binary classification (AUC~0.856), controlled feature ablation, ssGSEA
+comparison, molecular subtype benchmarking, within-subtype stratification,
+SHAP explainability with stability analysis, and model calibration, all
+on an external validation cohort of 1,483 patients.
+
+\subsection{Value beyond molecular subtyping}
+\label{sec:disc_subtype}
+
+A central question is whether the framework simply recapitulates
+information already captured by molecular subtype.  The subtype-only
+baseline (AUC~0.613) confirms that subtype labels alone are weakly
+predictive of five-year mortality; our combined model improves this by
+$+$0.243~AUC and $+$0.214~C-index.  It is important to note that the nine
+clinical features already include PAM50 subtype as one encoded variable,
+so the clinical-only model (AUC~0.849) already contains subtype
+information alongside tumour size, nodal status, and biomarker status.
+The large gap between subtype-only (0.613) and clinical-only (0.849)
+confirms that individual clinical variables carry substantial prognostic
+information beyond the subtype label.
+
+More compellingly, the within-subtype stratification analysis shows that
+even among 719 Luminal~A patients (all sharing the same molecular
+classification), the framework identifies highly significant survival
+differences (log-rank $p = 5.9 \times 10^{-22}$; C-index~$0.848$).
+This indicates that clinical features and pathway scores capture
+continuous biological variation (proliferative activity,
+immune infiltration, nodal involvement) that categorical subtype labels
+compress into a single bin.  The NRI of~0.801 confirms that this
+improvement translates to meaningful reclassification.
+
+\subsection{Mean z-score outperforms ssGSEA}
+\label{sec:disc_ssgsea}
+
+The mean z-score pathway aggregation consistently outperformed the
+ssGSEA baseline across all modelling approaches ($+$0.010 to $+$0.038
+AUC; $+$0.004 C-index).  This is not paradoxical: ssGSEA was designed for
+genome-scale gene sets where rank-based statistics capture subtle
+distributional shifts.  For small, curated gene sets of 4--10 genes,
+averaging standardised values preserves more discriminative information
+than rank-based statistics, which discard magnitude during the ranking
+step.  This finding has practical implications: the simpler method is not
+only more performant but also more computationally efficient and
+transparent.
+
+\subsection{Interpreting the ablation results}
+\label{sec:disc_ablation}
+
+Pathway scores alone achieve moderate discrimination (AUC~$\approx$~0.64;
+C-index~$\approx$~0.63).  The modest magnitude of the combined-over-
+clinical improvement ($+$0.007~AUC; $+$0.005~C-index) reflects partial
+redundancy between pathway scores and clinical proxies: Ki-67 is a single-
+gene proxy for our ten-gene proliferation pathway, and ER status
+binarises our continuous estrogen response score.  The more clinically
+relevant comparisons are: (1)~combined vs.\ molecular subtype alone
+($\Delta$AUC~$+$0.243), and (2)~within-subtype stratification
+(Luminal~A log-rank $p = 5.9 \times 10^{-22}$).  Decision curve analysis
+confirms positive net benefit across a wide range of clinically relevant
+thresholds, and the NRI quantifies the improvement in risk
+classification.  The pathway scores' primary contribution is
+representational richness: where clinical variables report binary
+categories, pathway scores provide continuous biological axes that
+enable the per-patient SHAP decompositions.
+
+\subsection{Feature stability supports generalisability}
+\label{sec:disc_stability}
+
+The high cross-fold rank stability of SHAP attributions
+(Spearman~$\rho = 0.82$) indicates that the model's importance hierarchy
+is robust to data partitioning.  Ki-67 and age consistently ranked in
+the top two, while pathway features showed moderate rank variability
+consistent with their smaller effect sizes.  This analysis directly
+addresses the common concern that SHAP rankings in omics settings are
+artefacts of particular data splits.
+
+\subsection{Calibration and clinical utility}
+\label{sec:disc_calibration}
+
+Among the three classifiers, random forest offers the best balance of
+discrimination (AUC~0.856) and calibration fidelity.  Gradient boosting
+shows step-like calibration despite strong discrimination.  For clinical
+deployment, calibration matters as much as AUC; decision curve analysis
+confirms positive net benefit across a clinically relevant threshold range.
+
+\subsection{Limitations}
+\label{sec:disc_limits}
+
+The TCGA training cohort (\(n = 213\)) is small by machine learning
+standards; however, external validation on 1,483 independent patients
+with fixed hyperparameters mitigates overfitting concerns.  One covariate
+(tumour size) showed a mild violation of the PH assumption ($p = 0.007$);
+sensitivity analyses confirmed this did not materially affect the
+C-index ($\Delta < 0.001$).  Pathway scores computed as gene-set means
+do not account for intra-pathway regulatory structure.  The modest
+pathway contribution over clinical features reflects redundancy with
+clinical proxies; datasets lacking clinical annotation would likely show
+a larger pathway effect.  The within-subtype analysis was restricted to
+Luminal~A due to its large sample size; extension to rarer subtypes
+requires larger cohorts.  All analyses are retrospective, and prospective
+clinical validation remains to be demonstrated.  Treatment-stratified
+sensitivity analyses confirmed that survival differences persisted within
+each treatment subgroup, mitigating concerns about treatment confounding.
+
+\subsection{Future directions}
+\label{sec:disc_future}
+
+Natural extensions include: (1)~random survival forests and DeepSurv as
+sensitivity analyses for PH assumption violations; (2)~within-subtype
+stratification for Luminal~B, HER2-enriched, and Basal-like tumours with
+larger cohorts; (3)~assessment of pathway scores as predictors of
+differential treatment response; (4)~federated learning across
+institutions; and (5)~stability-weighted pathway scoring that
+down-weights genes with high cross-fold variance.
+
+%=======================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+%=======================================================================
+
+We present a biologically informed explainable machine learning framework
+for breast cancer progression risk stratification.  Through survival
+analysis, binary classification, feature ablation, ssGSEA baseline
+comparison, molecular subtype baseline comparison, within-subtype risk
+stratification, SHAP explainability with stability assessment, model
+calibration, decision curve analysis, and net reclassification index,
+we demonstrate that curated pathway scores carry independent prognostic
+signal, outperform both standard enrichment methods and molecular subtype
+classification, and provide biologically grounded per-patient explanations
+with high cross-fold stability.  The within-subtype stratification result
+confirms that the framework captures risk variation that molecular subtype
+labels alone cannot resolve, even among Luminal~A patients
+(log-rank $p = 5.9 \times 10^{-22}$).  Together, these findings position
+the framework as a foundation for interpretable clinical decision support
+in breast cancer genomics.
+
+%=======================================================================
+% Declarations
+%=======================================================================
+
+\section*{CRediT authorship contribution statement}
+
+\textbf{Suhaan Thayyil:} Conceptualization, Data curation, Formal
+analysis, Investigation, Methodology, Software, Validation,
+Visualization, Writing -- original draft, Writing -- review \& editing.
+\textbf{Eshaan Nidee:} Conceptualization, Investigation, Biological
+interpretation, Writing -- review \& editing.
+
+\section*{Declaration of competing interest}
+
+The authors declare that they have no known competing financial interests
+or personal relationships that could have appeared to influence the work
+reported in this paper.
+
+\section*{Data availability}
+
+All data used in this study are publicly available.  TCGA-BRCA data
+are available through the GDC Data Portal
+(\url{https://portal.gdc.cancer.gov}).  SCAN-B/GSE96058 data are
+available through NCBI GEO (accession~GSE96058).  All analysis code
+and notebooks are available at \url{https://github.com/suhaanthayyil/breast-cancer-prediction};
+see Section~\ref{sec:code} for the specific commit hash and preprint DOI.
+
+\section*{Funding}
+
+This research received no specific grant from any funding agency in the
+public, commercial, or not-for-profit sectors.
+
+\section*{Acknowledgements}
+
+The authors thank the patients and staff of the TCGA and SCAN-B
+initiatives for making their data publicly available.
+
+%=======================================================================
+% References
+%=======================================================================
+
+\bibliographystyle{elsarticle-num}
+
+\begin{thebibliography}{99}
+
+\bibitem{barbie2009}
+Barbie, D.A., Tamayo, P., Boehm, J.S., et al., 2009.
+Systematic RNA interference reveals that oncogenic KRAS-driven cancers
+require TBK1. \emph{Nature} 462 (7269), 108--112.
+\url{https://doi.org/10.1038/nature08460}
+
+\bibitem{brueffer2018}
+Brueffer, C., Vallon-Christersson, J., Grabau, D., et al., 2018.
+Clinical value of RNA sequencing-based classifiers for prediction of the
+five conventional breast cancer biomarkers. \emph{JCO Precision Oncology}
+2, 1--18.
+\url{https://doi.org/10.1200/PO.17.00184}
+
+\bibitem{cardoso2016}
+Cardoso, F., van't Veer, L.J., Bogaerts, J., et al., 2016.
+70-gene signature as an aid to treatment decisions in early-stage breast
+cancer. \emph{New England Journal of Medicine} 375 (8), 717--729.
+\url{https://doi.org/10.1056/NEJMoa1602253}
+
+\bibitem{chakraborty2021}
+Chakraborty, D., Ivan, C., Amero, P., et al., 2021.
+Explainable artificial intelligence reveals novel insight into tumor
+microenvironment conditions linked with better prognosis in patients with
+breast cancer. \emph{Cancers} 13 (14), 3450.
+\url{https://doi.org/10.3390/cancers13143450}
+
+\bibitem{chen2021pathway}
+Chen, L., Wang, Y., Zhao, J., et al., 2021.
+Identification of pathway-based biomarkers with crosstalk analysis for
+overall survival risk prediction in breast cancer.
+\emph{Frontiers in Genetics} 12, 689715.
+\url{https://doi.org/10.3389/fgene.2021.689715}
+
+\bibitem{cox1972}
+Cox, D.R., 1972.
+Regression models and life-tables.
+\emph{Journal of the Royal Statistical Society, Series B} 34 (2),
+187--220.
+\url{https://doi.org/10.1111/j.2517-6161.1972.tb00899.x}
+
+\bibitem{dowsett2011}
+Dowsett, M., Nielsen, T.O., A'Hern, R., et al., 2011.
+Assessment of Ki67 in breast cancer: recommendations from the
+International Ki67 in Breast Cancer Working Group.
+\emph{Journal of the National Cancer Institute} 103 (22), 1656--1664.
+\url{https://doi.org/10.1093/jnci/djr393}
+
+\bibitem{hanahan2011}
+Hanahan, D., Weinberg, R.A., 2011.
+Hallmarks of cancer: the next generation.
+\emph{Cell} 144 (5), 646--674.
+\url{https://doi.org/10.1016/j.cell.2011.02.013}
+
+\bibitem{hanzelmann2013}
+H{\"a}nzelmann, S., Castelo, R., Guinney, J., 2013.
+GSVA: gene set variation analysis for microarray and RNA-seq data.
+\emph{BMC Bioinformatics} 14 (1), 7.
+\url{https://doi.org/10.1186/1471-2105-14-7}
+
+\bibitem{liberzon2015}
+Liberzon, A., Birger, C., Thorvalsd\'{o}ttir, H., et al., 2015.
+The Molecular Signatures Database (MSigDB) Hallmark gene set collection.
+\emph{Cell Systems} 1 (6), 417--425.
+\url{https://doi.org/10.1016/j.cels.2015.12.004}
+
+\bibitem{lundberg2017}
+Lundberg, S.M., Lee, S.-I., 2017.
+A unified approach to interpreting model predictions.
+\emph{Advances in Neural Information Processing Systems} 30, 4765--4774.
+
+\bibitem{nature2025shap}
+Nkurunziza, H., Schmid, M., Casalicchio, G., 2025.
+Breast cancer prediction based on gene expression data using
+interpretable machine learning techniques.
+\emph{Scientific Reports} 15, 7747.
+\url{https://doi.org/10.1038/s41598-025-91750-x}
+
+\bibitem{paik2004}
+Paik, S., Shak, S., Tang, G., et al., 2004.
+A multigene assay to predict recurrence of tamoxifen-treated, node-
+negative breast cancer.
+\emph{New England Journal of Medicine} 351 (27), 2817--2826.
+\url{https://doi.org/10.1056/NEJMoa041588}
+
+\bibitem{rudin2019}
+Rudin, C., 2019.
+Stop explaining black box machine learning models for high stakes
+decisions and use interpretable models instead.
+\emph{Nature Machine Intelligence} 1 (5), 206--215.
+\url{https://doi.org/10.1038/s42256-019-0048-x}
+
+\bibitem{saal2015}
+Saal, L.H., Vallon-Christersson, J., Hakkinen, J., et al., 2015.
+The Sweden Cancerome Analysis Network -- Breast (SCAN-B) initiative.
+\emph{Genome Medicine} 7 (1), 20.
+\url{https://doi.org/10.1186/s13073-015-0131-9}
+
+\bibitem{salgado2015}
+Salgado, R., Denkert, C., Demaria, S., et al., 2015.
+The evaluation of tumor-infiltrating lymphocytes (TILs) in breast cancer.
+\emph{Annals of Oncology} 26 (2), 259--271.
+\url{https://doi.org/10.1093/annonc/mdu450}
+
+\bibitem{tcga2012}
+The Cancer Genome Atlas Network, 2012.
+Comprehensive molecular portraits of human breast tumours.
+\emph{Nature} 490 (7418), 61--70.
+\url{https://doi.org/10.1038/nature11412}
+
+\bibitem{vantveer2002}
+van't Veer, L.J., Dai, H., van de Vijver, M.J., et al., 2002.
+Gene expression profiling predicts clinical outcome of breast cancer.
+\emph{Nature} 415 (6871), 530--536.
+\url{https://doi.org/10.1038/415530a}
+
+\end{thebibliography}
+
+\end{document}

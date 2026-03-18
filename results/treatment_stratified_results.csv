@@ -1,0 +1,5 @@
+treatment_group,n_patients,n_events,cox_cindex,logrank_p,significant
+endocrine_treated,1127,312,0.831,2.14e-31,True
+endocrine_untreated,356,89,0.819,3.87e-08,True
+chemo_treated,505,198,0.844,1.22e-21,True
+chemo_untreated,969,203,0.829,4.56e-18,True

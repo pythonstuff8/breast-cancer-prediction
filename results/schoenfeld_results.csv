@@ -1,0 +1,10 @@
+feature,p_value,passes_ph_assumption
+age_at_diagnosis,0.312,True
+tumor_size,0.007,False
+lymph_node_status_enc,0.143,True
+er_status_enc,0.089,True
+pgr_status_enc,0.201,True
+her2_status_enc,0.445,True
+ki67_status_enc,0.178,True
+nhg_enc,0.267,True
+pam50_subtype_enc,0.334,True

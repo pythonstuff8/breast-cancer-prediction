@@ -1,0 +1,6 @@
+metric,value,ci_lower,ci_upper,n_bootstrap
+nri_overall,0.801,0.679,0.911,1000
+nri_events,0.024,0.008,0.041,1000
+nri_nonevents,0.777,0.671,0.870,1000
+dca_net_benefit_threshold_low,0.04,,
+dca_net_benefit_threshold_high,0.50,,

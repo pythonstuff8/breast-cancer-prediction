@@ -38,7 +38,8 @@ breast-cancer-prediction/
 │   ├── 09_stability_analysis.ipynb
 │   ├── 10_calibration.ipynb
 │   ├── 11_figure_generation.ipynb
-│   └── 12_subtype_baseline.ipynb
+│   ├── 12_subtype_baseline.ipynb
+│   └── 13_additional_analyses.ipynb       # Peer-review analyses (PH tests, NRI, DCA)
 ├── src/
 │   ├── __init__.py
 │   ├── data_loader.py                   Data loading utilities
@@ -62,10 +63,17 @@ breast-cancer-prediction/
 │   ├── 03_model_performance.csv
 │   ├── 04_elastic_net_coefficients.csv
 │   ├── 04_shap_values_all_patients.csv
-│   └── ablation_results.csv
+│   ├── ablation_results.csv
+│   ├── schoenfeld_results.csv              # PH assumption tests
+│   ├── permutation_importance.csv          # Permutation importance rankings
+│   ├── bootstrap_ci_results.csv            # Bootstrap 95% CIs
+│   ├── treatment_stratified_results.csv    # Treatment subgroup analysis
+│   ├── dca_nri_results.csv                 # Decision curve + NRI metrics
+│   └── sensitivity_tumor_size_ph.csv       # Time-dependent tumor size sensitivity
 └── paper/
-    ├── IEEE_JBHI.tex                    IEEE JBHI submission
-    └── Biorxiv.tex                      bioRxiv preprint
+    ├── paper.tex                        # bioRxiv/Zenodo preprint
+    ├── ieee_jbhi_paper.tex            # IEEE JBHI submission
+    └── mlwa_paper.tex                   # Machine Learning with Applications (Elsevier)
 ```
 
 ## Reproduction Instructions
@@ -111,6 +119,44 @@ All figures are regenerated in `figures/` and all result CSVs in `results/`.
 | Combined vs Subtype | Delta | - | - | +0.243 |
 | Within Luminal A | CV C-index | - | - | 0.848 |
 | Within Luminal A | Log-rank p | - | - | 5.86e-22 |
+
+## Additional analyses (peer-review ready)
+
+These analyses were added in response to anticipated reviewer concerns and are
+documented in `notebooks/13_additional_analyses.ipynb`.
+
+| Analysis | Result | Purpose |
+|----------|--------|---------|
+| Schoenfeld residual tests | 8/9 covariates pass PH at α=0.05; tumor size mild violation (p=0.007) | Validates Cox model assumption |
+| Sensitivity (time-dependent tumor size) | ΔC-index = −0.001 | Confirms PH violation does not affect results |
+| Permutation importance | Ki-67 and age rank 1 and 2 (matches SHAP) | Validates SHAP rankings with independent method |
+| Treatment-stratified Cox | All 4 subgroups p < 1e-4 | Confirms risk signal not explained by treatment confounding |
+| Decision curve analysis | Positive net benefit, thresholds 0.04–0.50 | Demonstrates clinical utility beyond AUC |
+| Net reclassification index | NRI = 0.801 (95% CI: 0.679–0.911) vs subtype baseline | Quantifies improvement in patient classification |
+| Bootstrap 95% CIs | Added to all main AUC and C-index values | Statistical rigor per reviewer standards |
+
+## Journal papers
+
+| Version | File | Target journal | Status |
+|---------|------|----------------|--------|
+| Preprint | paper/paper.tex | Zenodo / bioRxiv | Posted — DOI: 10.5281/zenodo.18749909 |
+| IEEE version | paper/ieee_jbhi_paper.tex | IEEE JBHI (IF 6.7) | Ready to submit with professor co-author |
+| MLWA version | paper/mlwa_paper.tex | Machine Learning with Applications (IF 4.9) | Ready to submit |
+
+## Citation
+
+```bibtex
+@misc{thayyil2026breast,
+  author    = {Thayyil, Suhaan and Nidee, Eshaan},
+  title     = {A Biologically Informed Explainable Machine Learning Framework
+               for Breast Cancer Progression Risk Stratification from
+               Tumor Gene Expression},
+  year      = {2026},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.18749909},
+  url       = {https://doi.org/10.5281/zenodo.18749909}
+}
+```
 
 ## Data Sources
 

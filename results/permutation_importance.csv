@@ -1,0 +1,11 @@
+feature,mean_importance,std_importance,rank
+ki67_status_enc,0.0412,0.0031,1
+age_at_diagnosis,0.0387,0.0028,2
+er_status_enc,0.0201,0.0019,3
+Pathway_Estrogen,0.0178,0.0022,4
+Pathway_Proliferation,0.0156,0.0018,5
+Pathway_Immune,0.0134,0.0021,6
+lymph_node_status_enc,0.0118,0.0016,7
+nhg_enc,0.0097,0.0014,8
+Ratio_Prolif_Apop,0.0089,0.0013,9
+tumor_size,0.0082,0.0011,10

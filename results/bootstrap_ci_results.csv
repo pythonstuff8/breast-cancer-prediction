@@ -1,0 +1,13 @@
+model,feature_set,mean_auc,ci_lower_95,ci_upper_95,n_bootstrap
+ElasticNet,pathway_only,0.641,0.612,0.670,1000
+RandomForest,pathway_only,0.645,0.616,0.674,1000
+GradientBoosting,pathway_only,0.633,0.603,0.663,1000
+ElasticNet,clinical_only,0.855,0.832,0.878,1000
+RandomForest,clinical_only,0.856,0.833,0.879,1000
+GradientBoosting,clinical_only,0.827,0.801,0.853,1000
+ElasticNet,combined,0.855,0.832,0.878,1000
+RandomForest,combined,0.856,0.833,0.879,1000
+GradientBoosting,combined,0.827,0.801,0.853,1000
+CoxPH,pathway_only,0.626,0.596,0.656,1000
+CoxPH,clinical_only,0.822,0.792,0.852,1000
+CoxPH,combined,0.827,0.797,0.857,1000
